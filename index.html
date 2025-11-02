@@ -274,6 +274,7 @@ computer /kəmˈpjuːtə/ 电脑
     let isPaused = false;
     let playTimeout = null;
     let currentUtterance = null;
+    let preferredVoice = null; // 存储优选的高质量语音
     
     // DOM元素
     const wordDisplay = document.getElementById('word-display');
@@ -311,17 +312,63 @@ computer /kəmˈpjuːtə/ 电脑
     const cancelPlayTimesBtn = document.getElementById('cancel-play-times');
     const stopPlayBtn = document.getElementById('stop-play-btn');
     
-    // 播放单词发音
+    // 预加载语音并筛选高质量语音（重点优化）
+    function preloadVoices() {
+      // 触发语音加载
+      window.speechSynthesis.getVoices();
+      
+      // 监听语音加载完成事件
+      window.speechSynthesis.onvoiceschanged = () => {
+        const voices = window.speechSynthesis.getVoices();
+        // 筛选英语语音，优先选择增强型/高质量语音
+        const englishVoices = voices.filter(voice => 
+          voice.lang.includes('en-US') || voice.lang.includes('en-GB')
+        );
+        
+        // 优先选择带"Enhanced"（增强）、"High Quality"（高质量）标识的语音
+        preferredVoice = englishVoices.find(voice => 
+          voice.voiceURI.includes('Enhanced') || 
+          voice.name.includes('High Quality') ||
+          voice.name.includes('Samantha') ||  // iOS常见高质量语音
+          voice.name.includes('Alex')         // iOS常见高质量语音
+        );
+        
+        // 如果没有找到增强语音，退而求其次选择第一个英语语音
+        if (!preferredVoice && englishVoices.length > 0) {
+          preferredVoice = englishVoices[0];
+        }
+        
+        console.log('已加载语音：', preferredVoice ? preferredVoice.name : '未找到英语语音');
+      };
+    }
+    
+    // 播放单词发音（优化版，优先使用高质量语音）
     function speakWord(word, onEnd = null) {
+      // 停止所有正在播放的语音
       window.speechSynthesis.cancel();
+      
       currentUtterance = new SpeechSynthesisUtterance(word);
-      currentUtterance.lang = 'en-US';
-      currentUtterance.rate = 0.8;
-      currentUtterance.pitch = 1.1;
-      if (onEnd) currentUtterance.onend = onEnd;
+      
+      // 优先使用预加载的高质量语音
+      if (preferredVoice) {
+        currentUtterance.voice = preferredVoice;
+      }
+      
+      // 优化发音参数（适合iOS）
+      currentUtterance.lang = 'en-US';  // 明确指定美式英语
+      currentUtterance.rate = 0.7;      // 放慢语速，更清晰
+      currentUtterance.pitch = 1.0;     // 自然音调
+      currentUtterance.volume = 1.0;    // 最大音量
+      
+      // 播放结束回调
+      if (onEnd) {
+        currentUtterance.onend = onEnd;
+      }
+      
+      // 执行播放
       window.speechSynthesis.speak(currentUtterance);
       
-      // 动画效果
+      // 单词动画效果
       wordDisplay.classList.add('scale-110', 'text-secondary');
       setTimeout(() => wordDisplay.classList.remove('scale-110', 'text-secondary'), 500);
     }
@@ -773,7 +820,8 @@ computer /kəmˈpjuːtə/ 电脑
       }
     });
     
-    // 初始化
+    // 初始化：预加载语音并显示单词
+    preloadVoices(); // 重点：页面加载时就预加载语音
     currentListNameEl.textContent = vocabularyData.currentList;
     defaultTimesDisplay.textContent = `${vocabularyData.defaultPlayTimes}次`;
     displayCurrentWord();
