@@ -312,39 +312,54 @@ computer /kəmˈpjuːtə/ 电脑
     
     // 播放单词发音（核心：使用百度翻译API，跨设备发音一致）
     function speakWord(word, onEnd = null) {
-      // 停止所有正在播放的音频（避免重叠）
-      const existingAudio = document.querySelector('#third-party-audio');
-      if (existingAudio) {
-        existingAudio.pause();
-        existingAudio.remove();
-      }
+  // 停止所有正在播放的音频
+  const existingAudio = document.querySelector('#third-party-audio');
+  if (existingAudio) {
+    existingAudio.pause();
+    existingAudio.remove();
+  }
 
-      // 创建临时音频元素
-      const audio = document.createElement('audio');
-      audio.id = 'third-party-audio';
-      
-      // 百度翻译发音API（参数说明：lan=en英语，spd=3语速，source=web来源）
-      const encodedWord = encodeURIComponent(word); // 处理特殊字符（如空格、符号）
-      audio.src = `https://fanyi.baidu.com/gettts?lan=en&text=${encodedWord}&spd=3&source=web`;
-      
-      // 添加到页面（不显示，仅用于播放）
-      document.body.appendChild(audio);
+  // 严格编码单词（处理特殊字符，如空格、符号、中文）
+  const encodedWord = encodeURIComponent(word(word.trim().replace(/[^a-zA-Z0-9]/g, '')); // 只保留字母数字，避免特殊字符
+  if (!encodedWord) {
+    alert('请包含无效字符，请检查');
+    return;
+  }
 
-      // 播放音频
-      audio.play().catch(err => {
-        console.error('发音失败：', err);
-        alert('发音需要网络连接，请检查网络后重试');
-      });
+  // 创建临时音频元素
+  const audio = document.createElement('audio');
+  audio.id = 'third-party-audio';
+  
+  // 使用更稳定的接口参数（添加随机数避免缓存）
+  const timestamp = new Date().getTime();
+  audio.src = `https://fanyi.baidu.com/gettts?lan=en&text=${encodedWord}&spd=3&source=web&t=${timestamp}`;
+  
+  // 添加 crossorigin 属性解决跨域问题
+  audio.crossOrigin = 'anonymous';
+  
+  document.body.appendChild(audio);
 
-      // 播放结束回调（用于连续播放逻辑）
-      if (onEnd) {
-        audio.onended = onEnd;
-      }
-
-      // 单词动画效果
-      wordDisplay.classList.add('scale-110', 'text-secondary');
-      setTimeout(() => wordDisplay.classList.remove('scale-110', 'text-secondary'), 500);
+  // 播放音频并捕获更详细的错误
+  audio.play().catch(err => {
+    console.error('发音失败详情：', err);
+    // 区分错误类型提示
+    if (err.name === 'NotAllowedError') {
+      alert('浏览器阻止了音频播放，请允许网站播放音频');
+    } else if (err.name === 'NetworkError') {
+      alert('网络请求失败，请重试');
+    } else {
+      alert('发音失败：' + err.message);
     }
+  });
+
+  if (onEnd) {
+    audio.onended = onEnd;
+  }
+
+  // 单词动画效果
+  wordDisplay.classList.add('scale-110', 'text-secondary');
+  setTimeout(() => wordDisplay.classList.remove('scale-110', 'text-secondary'), 500);
+}
     
     // 按次数播放
     function playWordByTimes(times, isDefault = false) {
@@ -829,3 +844,4 @@ computer /kəmˈpjuːtə/ 电脑
   </script>
 </body>
 </html>
+
