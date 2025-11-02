@@ -101,12 +101,12 @@
     
     <!-- 控制按钮区 -->
     <div class="flex flex-col gap-4">
-      <button id="play-btn" class="bg-primary hover:bg-primary/90 text-white py-4 px-6 rounded-xl flex items-center justify-center gap-2 btn-hover">
+      <button id="play-btn" class="bg-primary hover:bg-primary/90 text-white py-4 px-6 rounded-xl-xl flex items-center justify-center gap-2 btn-hover">
         <i class="fa fa-volume-up text-xl"></i>
         <span>播放发音</span>
       </button>
       
-      <button id="play-default-btn" class="bg-orange-500 hover:bg-orange-600 text-white py-3 px-6 rounded-xl flex items-center justify-center gap-2 btn-hover">
+      <button id="play-default-btn" class="bg-orange-500 hover:bg-orange-600 text-white py-3 px-6 rounded-xl flex items items items items items-center justify-center gap-2 btn-hover">
         <i class="fa fa-repeat text-xl"></i>
         <span>按默认次数播放</span>
       </button>
@@ -273,8 +273,6 @@ computer /kəmˈpjuːtə/ 电脑
     let isPlayingByTimes = false;
     let isPaused = false;
     let playTimeout = null;
-    let currentUtterance = null;
-    let preferredVoice = null; // 存储优选的高质量语音
     
     // DOM元素
     const wordDisplay = document.getElementById('word-display');
@@ -312,62 +310,37 @@ computer /kəmˈpjuːtə/ 电脑
     const cancelPlayTimesBtn = document.getElementById('cancel-play-times');
     const stopPlayBtn = document.getElementById('stop-play-btn');
     
-    // 预加载语音并筛选高质量语音（重点优化）
-    function preloadVoices() {
-      // 触发语音加载
-      window.speechSynthesis.getVoices();
-      
-      // 监听语音加载完成事件
-      window.speechSynthesis.onvoiceschanged = () => {
-        const voices = window.speechSynthesis.getVoices();
-        // 筛选英语语音，优先选择增强型/高质量语音
-        const englishVoices = voices.filter(voice => 
-          voice.lang.includes('en-US') || voice.lang.includes('en-GB')
-        );
-        
-        // 优先选择带"Enhanced"（增强）、"High Quality"（高质量）标识的语音
-        preferredVoice = englishVoices.find(voice => 
-          voice.voiceURI.includes('Enhanced') || 
-          voice.name.includes('High Quality') ||
-          voice.name.includes('Samantha') ||  // iOS常见高质量语音
-          voice.name.includes('Alex')         // iOS常见高质量语音
-        );
-        
-        // 如果没有找到增强语音，退而求其次选择第一个英语语音
-        if (!preferredVoice && englishVoices.length > 0) {
-          preferredVoice = englishVoices[0];
-        }
-        
-        console.log('已加载语音：', preferredVoice ? preferredVoice.name : '未找到英语语音');
-      };
-    }
-    
-    // 播放单词发音（优化版，优先使用高质量语音）
+    // 播放单词发音（核心：使用百度翻译API，跨设备发音一致）
     function speakWord(word, onEnd = null) {
-      // 停止所有正在播放的语音
-      window.speechSynthesis.cancel();
-      
-      currentUtterance = new SpeechSynthesisUtterance(word);
-      
-      // 优先使用预加载的高质量语音
-      if (preferredVoice) {
-        currentUtterance.voice = preferredVoice;
+      // 停止所有正在播放的音频（避免重叠）
+      const existingAudio = document.querySelector('#third-party-audio');
+      if (existingAudio) {
+        existingAudio.pause();
+        existingAudio.remove();
       }
+
+      // 创建临时音频元素
+      const audio = document.createElement('audio');
+      audio.id = 'third-party-audio';
       
-      // 优化发音参数（适合iOS）
-      currentUtterance.lang = 'en-US';  // 明确指定美式英语
-      currentUtterance.rate = 0.7;      // 放慢语速，更清晰
-      currentUtterance.pitch = 1.0;     // 自然音调
-      currentUtterance.volume = 1.0;    // 最大音量
+      // 百度翻译发音API（参数说明：lan=en英语，spd=3语速，source=web来源）
+      const encodedWord = encodeURIComponent(word); // 处理特殊字符（如空格、符号）
+      audio.src = `https://fanyi.baidu.com/gettts?lan=en&text=${encodedWord}&spd=3&source=web`;
       
-      // 播放结束回调
+      // 添加到页面（不显示，仅用于播放）
+      document.body.appendChild(audio);
+
+      // 播放音频
+      audio.play().catch(err => {
+        console.error('发音失败：', err);
+        alert('发音需要网络连接，请检查网络后重试');
+      });
+
+      // 播放结束回调（用于连续播放逻辑）
       if (onEnd) {
-        currentUtterance.onend = onEnd;
+        audio.onended = onEnd;
       }
-      
-      // 执行播放
-      window.speechSynthesis.speak(currentUtterance);
-      
+
       // 单词动画效果
       wordDisplay.classList.add('scale-110', 'text-secondary');
       setTimeout(() => wordDisplay.classList.remove('scale-110', 'text-secondary'), 500);
@@ -413,7 +386,7 @@ computer /kəmˈpjuːtə/ 电脑
           resetPlayTimesState();
           nextWordWithPlay();
         } else {
-          playTimeout = setTimeout(playNextTime, 500);
+          playTimeout = setTimeout(playNextTime, 500); // 两次播放间隔500ms
         }
       });
     }
@@ -422,7 +395,9 @@ computer /kəmˈpjuːtə/ 电脑
     function nextWordWithPlay() {
       if (vocabularyList.length === 0) return;
       
-      window.speechSynthesis.cancel();
+      // 清除可能存在的音频和定时器
+      const existingAudio = document.querySelector('#third-party-audio');
+      if (existingAudio) existingAudio.remove();
       clearTimeout(playTimeout);
       
       currentIndex = (currentIndex + 1) % vocabularyList.length;
@@ -438,6 +413,11 @@ computer /kəmˈpjuːtə/ 电脑
       isPlayingByTimes = false;
       isPaused = false;
       clearTimeout(playTimeout);
+      
+      // 清除音频元素
+      const existingAudio = document.querySelector('#third-party-audio');
+      if (existingAudio) existingAudio.remove();
+      
       stopPlayBtn.classList.add('hidden');
       pauseBtn.classList.add('hidden');
       statusIndicator.textContent = '状态：单次播放模式';
@@ -447,16 +427,20 @@ computer /kəmˈpjuːtə/ 电脑
     function togglePause() {
       if (!isPlayingByTimes) return;
       
+      const existingAudio = document.querySelector('#third-party-audio');
       if (isPaused) {
+        // 继续播放
         isPaused = false;
+        if (existingAudio) existingAudio.play();
         pauseBtn.innerHTML = '<i class="fa fa-pause text-xl"></i><span>暂停播放</span>';
         statusIndicator.textContent = `状态：正在播放（${currentPlayTimes}/${targetPlayTimes}次）`;
         if (currentPlayTimes < targetPlayTimes) {
           playTimeout = setTimeout(playNextTime, 500);
         }
       } else {
+        // 暂停播放
         isPaused = true;
-        window.speechSynthesis.pause();
+        if (existingAudio) existingAudio.pause();
         clearTimeout(playTimeout);
         pauseBtn.innerHTML = '<i class="fa fa-play text-xl"></i><span>继续播放</span>';
         statusIndicator.textContent = `状态：已暂停（${currentPlayTimes}/${targetPlayTimes}次）`;
@@ -465,7 +449,9 @@ computer /kəmˈpjuːtə/ 电脑
     
     // 停止播放
     function stopPlayByTimes() {
-      window.speechSynthesis.cancel();
+      // 清除音频和定时器
+      const existingAudio = document.querySelector('#third-party-audio');
+      if (existingAudio) existingAudio.remove();
       resetPlayTimesState();
       playTimesModal.classList.add('hidden');
     }
@@ -490,7 +476,9 @@ computer /kəmˈpjuːtə/ 电脑
     function prevWord() {
       if (vocabularyList.length === 0) return;
       
-      window.speechSynthesis.cancel();
+      // 停止播放并重置状态
+      const existingAudio = document.querySelector('#third-party-audio');
+      if (existingAudio) existingAudio.remove();
       resetPlayTimesState();
       
       currentIndex = (currentIndex - 1 + vocabularyList.length) % vocabularyList.length;
@@ -502,7 +490,9 @@ computer /kəmˈpjuːtə/ 电脑
     function nextWord() {
       if (vocabularyList.length === 0) return;
       
-      window.speechSynthesis.cancel();
+      // 停止播放并重置状态
+      const existingAudio = document.querySelector('#third-party-audio');
+      if (existingAudio) existingAudio.remove();
       resetPlayTimesState();
       
       currentIndex = (currentIndex + 1) % vocabularyList.length;
@@ -820,8 +810,7 @@ computer /kəmˈpjuːtə/ 电脑
       }
     });
     
-    // 初始化：预加载语音并显示单词
-    preloadVoices(); // 重点：页面加载时就预加载语音
+    // 初始化
     currentListNameEl.textContent = vocabularyData.currentList;
     defaultTimesDisplay.textContent = `${vocabularyData.defaultPlayTimes}次`;
     displayCurrentWord();
