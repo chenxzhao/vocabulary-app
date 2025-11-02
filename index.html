@@ -101,12 +101,12 @@
     
     <!-- 控制按钮区 -->
     <div class="flex flex-col gap-4">
-      <button id="play-btn" class="bg-primary hover:bg-primary/90 text-white py-4 px-6 rounded-xl-xl flex items-center justify-center gap-2 btn-hover">
+      <button id="play-btn" class="bg-primary hover:bg-primary/90 text-white py-4 px-6 rounded-xl flex items-center justify-center gap-2 btn-hover">
         <i class="fa fa-volume-up text-xl"></i>
         <span>播放发音</span>
       </button>
       
-      <button id="play-default-btn" class="bg-orange-500 hover:bg-orange-600 text-white py-3 px-6 rounded-xl flex items items items items items-center justify-center gap-2 btn-hover">
+      <button id="play-default-btn" class="bg-orange-500 hover:bg-orange-600 text-white py-3 px-6 rounded-xl flex items-center justify-center gap-2 btn-hover">
         <i class="fa fa-repeat text-xl"></i>
         <span>按默认次数播放</span>
       </button>
@@ -273,6 +273,7 @@ computer /kəmˈpjuːtə/ 电脑
     let isPlayingByTimes = false;
     let isPaused = false;
     let playTimeout = null;
+    let currentUtterance = null;
     
     // DOM元素
     const wordDisplay = document.getElementById('word-display');
@@ -310,56 +311,20 @@ computer /kəmˈpjuːtə/ 电脑
     const cancelPlayTimesBtn = document.getElementById('cancel-play-times');
     const stopPlayBtn = document.getElementById('stop-play-btn');
     
-    // 播放单词发音（核心：使用百度翻译API，跨设备发音一致）
+    // 播放单词发音
     function speakWord(word, onEnd = null) {
-  // 停止所有正在播放的音频
-  const existingAudio = document.querySelector('#third-party-audio');
-  if (existingAudio) {
-    existingAudio.pause();
-    existingAudio.remove();
-  }
-
-  // 严格编码单词（处理特殊字符，如空格、符号、中文）
-  const encodedWord = encodeURIComponent(word(word.trim().replace(/[^a-zA-Z0-9]/g, '')); // 只保留字母数字，避免特殊字符
-  if (!encodedWord) {
-    alert('请包含无效字符，请检查');
-    return;
-  }
-
-  // 创建临时音频元素
-  const audio = document.createElement('audio');
-  audio.id = 'third-party-audio';
-  
-  // 使用更稳定的接口参数（添加随机数避免缓存）
-  const timestamp = new Date().getTime();
-  audio.src = `https://fanyi.baidu.com/gettts?lan=en&text=${encodedWord}&spd=3&source=web&t=${timestamp}`;
-  
-  // 添加 crossorigin 属性解决跨域问题
-  audio.crossOrigin = 'anonymous';
-  
-  document.body.appendChild(audio);
-
-  // 播放音频并捕获更详细的错误
-  audio.play().catch(err => {
-    console.error('发音失败详情：', err);
-    // 区分错误类型提示
-    if (err.name === 'NotAllowedError') {
-      alert('浏览器阻止了音频播放，请允许网站播放音频');
-    } else if (err.name === 'NetworkError') {
-      alert('网络请求失败，请重试');
-    } else {
-      alert('发音失败：' + err.message);
+      window.speechSynthesis.cancel();
+      currentUtterance = new SpeechSynthesisUtterance(word);
+      currentUtterance.lang = 'en-US';
+      currentUtterance.rate = 0.8;
+      currentUtterance.pitch = 1.1;
+      if (onEnd) currentUtterance.onend = onEnd;
+      window.speechSynthesis.speak(currentUtterance);
+      
+      // 动画效果
+      wordDisplay.classList.add('scale-110', 'text-secondary');
+      setTimeout(() => wordDisplay.classList.remove('scale-110', 'text-secondary'), 500);
     }
-  });
-
-  if (onEnd) {
-    audio.onended = onEnd;
-  }
-
-  // 单词动画效果
-  wordDisplay.classList.add('scale-110', 'text-secondary');
-  setTimeout(() => wordDisplay.classList.remove('scale-110', 'text-secondary'), 500);
-}
     
     // 按次数播放
     function playWordByTimes(times, isDefault = false) {
@@ -401,7 +366,7 @@ computer /kəmˈpjuːtə/ 电脑
           resetPlayTimesState();
           nextWordWithPlay();
         } else {
-          playTimeout = setTimeout(playNextTime, 500); // 两次播放间隔500ms
+          playTimeout = setTimeout(playNextTime, 500);
         }
       });
     }
@@ -410,9 +375,7 @@ computer /kəmˈpjuːtə/ 电脑
     function nextWordWithPlay() {
       if (vocabularyList.length === 0) return;
       
-      // 清除可能存在的音频和定时器
-      const existingAudio = document.querySelector('#third-party-audio');
-      if (existingAudio) existingAudio.remove();
+      window.speechSynthesis.cancel();
       clearTimeout(playTimeout);
       
       currentIndex = (currentIndex + 1) % vocabularyList.length;
@@ -428,11 +391,6 @@ computer /kəmˈpjuːtə/ 电脑
       isPlayingByTimes = false;
       isPaused = false;
       clearTimeout(playTimeout);
-      
-      // 清除音频元素
-      const existingAudio = document.querySelector('#third-party-audio');
-      if (existingAudio) existingAudio.remove();
-      
       stopPlayBtn.classList.add('hidden');
       pauseBtn.classList.add('hidden');
       statusIndicator.textContent = '状态：单次播放模式';
@@ -442,20 +400,16 @@ computer /kəmˈpjuːtə/ 电脑
     function togglePause() {
       if (!isPlayingByTimes) return;
       
-      const existingAudio = document.querySelector('#third-party-audio');
       if (isPaused) {
-        // 继续播放
         isPaused = false;
-        if (existingAudio) existingAudio.play();
         pauseBtn.innerHTML = '<i class="fa fa-pause text-xl"></i><span>暂停播放</span>';
         statusIndicator.textContent = `状态：正在播放（${currentPlayTimes}/${targetPlayTimes}次）`;
         if (currentPlayTimes < targetPlayTimes) {
           playTimeout = setTimeout(playNextTime, 500);
         }
       } else {
-        // 暂停播放
         isPaused = true;
-        if (existingAudio) existingAudio.pause();
+        window.speechSynthesis.pause();
         clearTimeout(playTimeout);
         pauseBtn.innerHTML = '<i class="fa fa-play text-xl"></i><span>继续播放</span>';
         statusIndicator.textContent = `状态：已暂停（${currentPlayTimes}/${targetPlayTimes}次）`;
@@ -464,9 +418,7 @@ computer /kəmˈpjuːtə/ 电脑
     
     // 停止播放
     function stopPlayByTimes() {
-      // 清除音频和定时器
-      const existingAudio = document.querySelector('#third-party-audio');
-      if (existingAudio) existingAudio.remove();
+      window.speechSynthesis.cancel();
       resetPlayTimesState();
       playTimesModal.classList.add('hidden');
     }
@@ -491,9 +443,7 @@ computer /kəmˈpjuːtə/ 电脑
     function prevWord() {
       if (vocabularyList.length === 0) return;
       
-      // 停止播放并重置状态
-      const existingAudio = document.querySelector('#third-party-audio');
-      if (existingAudio) existingAudio.remove();
+      window.speechSynthesis.cancel();
       resetPlayTimesState();
       
       currentIndex = (currentIndex - 1 + vocabularyList.length) % vocabularyList.length;
@@ -505,9 +455,7 @@ computer /kəmˈpjuːtə/ 电脑
     function nextWord() {
       if (vocabularyList.length === 0) return;
       
-      // 停止播放并重置状态
-      const existingAudio = document.querySelector('#third-party-audio');
-      if (existingAudio) existingAudio.remove();
+      window.speechSynthesis.cancel();
       resetPlayTimesState();
       
       currentIndex = (currentIndex + 1) % vocabularyList.length;
@@ -844,4 +792,3 @@ computer /kəmˈpjuːtə/ 电脑
   </script>
 </body>
 </html>
-
