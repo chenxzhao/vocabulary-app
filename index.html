@@ -226,6 +226,10 @@ computer /kəmˈpjuːtə/ 电脑
   </div>
 
   <script>
+    // 全局变量：TXT文件存放目录和清单文件路径
+    const TXT_FOLDER = "asset/"; // TXT文件统一放在asset文件夹
+    const FILE_LIST_PATH = TXT_FOLDER + "file-list.txt"; // 清单文件路径（记录所有TXT文件名）
+
     // 初始默认单词列表
     const DEFAULT_WORDS = [
       { english: "apple", phonetic: "/ˈæpl/", chinese: "苹果" },
@@ -262,6 +266,71 @@ computer /kəmˈpjuːtə/ 电脑
       const hint = document.getElementById('save-hint');
       hint.classList.remove('hidden');
       setTimeout(() => hint.classList.add('hidden'), 2000);
+    }
+
+    // 从清单文件读取所有TXT文件名（无需手动修改代码，只需维护file-list.txt）
+    async function getTxtFileNames() {
+      try {
+        const response = await fetch(FILE_LIST_PATH);
+        if (!response.ok) throw new Error("未找到文件清单，请检查asset文件夹下是否有file-list.txt");
+        const text = await response.text();
+        // 解析清单：过滤空行、注释行（#开头），保留有效文件名
+        return text.split('\n')
+          .map(line => line.trim())
+          .filter(line => line && !line.startsWith('#')); // 排除空行和注释
+      } catch (err) {
+        console.error("读取TXT文件清单失败：", err);
+        return []; // 清单不存在时返回空数组，不影响其他功能
+      }
+    }
+
+    // 解析单个TXT文件为单词列表
+    async function loadWordsFromTxt(filePath) {
+      try {
+        const response = await fetch(filePath);
+        if (!response.ok) throw new Error(`文件${filePath}加载失败`);
+        const text = await response.text();
+        // 解析每行内容为{english, phonetic, chinese}格式
+        return text.split('\n')
+          .map(line => line.trim())
+          .filter(line => line) // 过滤空行
+          .map(line => {
+            const parts = line.split(/\s+/); // 按空格分割（支持音标含空格）
+            const english = parts[0] || '';
+            const phonetic = parts[1] || '无音标';
+            const chinese = parts.slice(2).join(' ') || '无含义'; // 中文可能含空格（如“计算机科学”）
+            return { english, phonetic, chinese };
+          });
+      } catch (err) {
+        console.error(`解析${filePath}失败：`, err);
+        return [];
+      }
+    }
+
+    // 批量加载asset文件夹中的所有TXT文件（从清单获取文件名）
+    async function loadAllTxtLists() {
+      // 步骤1：先从清单文件获取所有TXT文件名
+      const txtFileNames = await getTxtFileNames();
+      if (txtFileNames.length === 0) {
+        console.log("未检测到TXT文件（清单为空或不存在）");
+        return;
+      }
+
+      // 步骤2：逐个加载TXT文件并解析
+      for (const fileName of txtFileNames) {
+        const fullPath = TXT_FOLDER + fileName; // 拼接完整路径（asset/xxx.txt）
+        const listName = fileName.replace('.txt', ''); // 列表名称 = 文件名（去掉.txt）
+        const words = await loadWordsFromTxt(fullPath); // 复用解析TXT的函数
+
+        // 若解析成功且列表不存在，则添加到数据中
+        if (words.length > 0 && !vocabularyData.lists[listName]) {
+          vocabularyData.lists[listName] = words;
+        }
+      }
+
+      // 步骤3：保存数据并刷新列表显示
+      saveVocabularyData();
+      renderLists();
     }
     
     // 全局变量
@@ -525,6 +594,17 @@ computer /kəmˈpjuːtə/ 电脑
 
     // 清空当前列表
     function clearCurrentList() {
+      // 判断是否为TXT导入的列表（禁止清空）
+      const isTxtList = Object.keys(vocabularyData.lists).some(listName => {
+        return vocabularyData.currentList === listName && 
+               getTxtFileNames().then(names => names.includes(listName + '.txt')).catch(() => false);
+      });
+
+      if (isTxtList) {
+        alert('TXT导入的列表不能清空，可通过修改原TXT文件更新内容');
+        return;
+      }
+
       if (vocabularyData.currentList === "默认列表") {
         if (confirm('确定要重置默认列表吗？将恢复为初始单词')) {
           vocabularyList = [...DEFAULT_WORDS];
@@ -544,18 +624,24 @@ computer /kəmˈpjuːtə/ 电脑
       showSaveHint();
     }
     
-    // 渲染列表
+    // 渲染列表（标记TXT导入的列表）
     function renderLists() {
       listsContainer.innerHTML = '';
+      // 获取TXT列表名称（异步，先缓存）
+      const txtFileNames = getTxtFileNames().then(names => names.map(name => name.replace('.txt', '')));
       
-      Object.keys(vocabularyData.lists).forEach(listName => {
+      Object.keys(vocabularyData.lists).forEach(async (listName) => {
+        const isTxtList = await txtFileNames.then(names => names.includes(listName));
         const listItem = document.createElement('div');
         listItem.className = `p-3 border rounded-lg mb-2 cursor-pointer transition-all ${
           listName === vocabularyData.currentList ? 'list-item-active' : 'hover:bg-gray-50 border-gray-200'
         }`;
         listItem.innerHTML = `
           <div class="flex justify-between items-center">
-            <span>${listName}</span>
+            <span>
+              ${listName}
+              ${isTxtList ? '<span class="ml-2 text-xs bg-green-100 text-green-800 px-1.5 rounded">TXT导入</span>' : ''}
+            </span>
             <span class="text-xs text-gray-500">${vocabularyData.lists[listName].length}个单词</span>
           </div>
         `;
@@ -603,28 +689,39 @@ computer /kəmˈpjuːtə/ 电脑
       displayCurrentWord();
     }
     
-    // 删除列表
+    // 删除列表（禁止删除TXT导入的列表）
     function deleteSelectedList() {
       const currentList = vocabularyData.currentList;
       
+      // 禁止删除默认列表
       if (currentList === "默认列表") {
         alert('默认列表不能删除');
         return;
       }
       
-      if (!confirm(`确定要删除列表"${currentList}"吗？所有单词将丢失`)) return;
-      
-      delete vocabularyData.lists[currentList];
-      vocabularyData.currentList = "默认列表";
-      vocabularyList = vocabularyData.lists["默认列表"];
-      currentIndex = 0;
-      localStorage.setItem('currentWordIndex', currentIndex);
-      
-      saveVocabularyData();
-      resetPlayTimesState();
-      renderLists();
-      currentListNameEl.textContent = "默认列表";
-      displayCurrentWord();
+      // 禁止删除TXT导入的列表
+      getTxtFileNames().then(txtNames => {
+        const isTxtList = txtNames.includes(currentList + '.txt');
+        if (isTxtList) {
+          alert('TXT导入的列表不能删除，可通过移除TXT文件和清单中的记录来移除');
+          return;
+        }
+        
+        // 确认删除自定义列表
+        if (confirm(`确定要删除列表"${currentList}"吗？所有单词将丢失`)) {
+          delete vocabularyData.lists[currentList];
+          vocabularyData.currentList = "默认列表";
+          vocabularyList = vocabularyData.lists["默认列表"];
+          currentIndex = 0;
+          localStorage.setItem('currentWordIndex', currentIndex);
+          
+          saveVocabularyData();
+          resetPlayTimesState();
+          renderLists();
+          currentListNameEl.textContent = "默认列表";
+          displayCurrentWord();
+        }
+      });
     }
     
     // 打开列表管理
@@ -773,22 +870,24 @@ computer /kəmˈpjuːtə/ 电脑
       }
     });
     
-    // 初始化
-    currentListNameEl.textContent = vocabularyData.currentList;
-    defaultTimesDisplay.textContent = `${vocabularyData.defaultPlayTimes}次`;
-    displayCurrentWord();
-    bindPlayTimeBtns();
-  </script>
-  
-  <!-- 注册Service Worker -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
+    // 初始化页面（先加载TXT再初始化显示）
+    window.addEventListener('load', async () => {
+      // 先加载所有TXT单词列表
+      await loadAllTxtLists();
+      
+      // 再执行原有初始化逻辑
+      currentListNameEl.textContent = vocabularyData.currentList;
+      defaultTimesDisplay.textContent = `${vocabularyData.defaultPlayTimes}次`;
+      displayCurrentWord();
+      bindPlayTimeBtns();
+
+      // 原有Service Worker注册代码
+      if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('service-worker.js')
           .then(registration => console.log('ServiceWorker注册成功:', registration.scope))
           .catch(err => console.log('ServiceWorker注册失败:', err));
-      });
-    }
+      }
+    });
   </script>
 </body>
 </html>
